@@ -1,4 +1,4 @@
-kpackage com.saha.ai;
+package com.saha.ai;
 
 import android.app.Notification;
 import android.app.NotificationChannel;

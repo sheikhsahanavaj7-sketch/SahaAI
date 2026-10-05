@@ -1,17 +1,17 @@
 package com.saha.ai;
 
-import android.Manifest;
 import android.app.Activity;
-import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.widget.TextView;
 import android.graphics.Color;
 import android.view.Gravity;
 
+import java.util.Locale;
+
 public class MainActivity extends Activity {
 
-    private static final int MIC_PERMISSION = 100;
+    private TextToSpeech tts;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -21,8 +21,8 @@ public class MainActivity extends Activity {
 
         text.setText(
                 "Saha AI\n\n" +
-                "🎙️ Voice Assistant Active\n\n" +
-                "“Hey Saha” bolo."
+                "🔊 Text-to-Speech Test\n\n" +
+                "Saha ab bolega."
         );
 
         text.setTextSize(24);
@@ -32,47 +32,30 @@ public class MainActivity extends Activity {
 
         setContentView(text);
 
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
+        tts = new TextToSpeech(this, status -> {
 
-            requestPermissions(
-                    new String[]{Manifest.permission.RECORD_AUDIO},
-                    MIC_PERMISSION
-            );
+            if (status == TextToSpeech.SUCCESS) {
 
-        } else {
-            startSahaService();
-        }
+                tts.setLanguage(new Locale("hi", "IN"));
+
+                tts.speak(
+                        "नमस्ते, मैं साहा हूँ।",
+                        TextToSpeech.QUEUE_FLUSH,
+                        null,
+                        "SAHA_TEST"
+                );
+            }
+        });
     }
 
     @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            String[] permissions,
-            int[] grantResults) {
+    protected void onDestroy() {
 
-        super.onRequestPermissionsResult(
-                requestCode,
-                permissions,
-                grantResults
-        );
-
-        if (requestCode == MIC_PERMISSION
-                && grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-
-            startSahaService();
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
         }
-    }
 
-    private void startSahaService() {
-
-        Intent serviceIntent =
-                new Intent(this, SahaVoiceService.class);
-
-        startForegroundService(serviceIntent);
+        super.onDestroy();
     }
 }
-
-
-

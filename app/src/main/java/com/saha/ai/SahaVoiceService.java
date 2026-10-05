@@ -6,10 +6,12 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.speech.tts.TextToSpeech;
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -17,7 +19,7 @@ import java.util.Locale;
 public class SahaVoiceService extends Service {
 
     private SpeechRecognizer recognizer;
-
+    private TextToSpeech tts;
     private static final String CHANNEL_ID = "saha_voice";
 
     @Override
@@ -35,13 +37,24 @@ public class SahaVoiceService extends Service {
 
         startForeground(1, notification);
 
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                tts.setLanguage(new Locale("hi", "IN"));
+            }
+        });
+
         startListening();
     }
 
     private void startListening() {
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            speak("Voice recognition available nahi hai.");
             return;
+        }
+
+        if (recognizer != null) {
+            recognizer.destroy();
         }
 
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
@@ -58,25 +71,15 @@ public class SahaVoiceService extends Service {
 
                 if (matches != null && !matches.isEmpty()) {
 
-                    String command = matches.get(0).toLowerCase(
-                            Locale.ROOT
-                    );
+                    String command = matches.get(0)
+                            .toLowerCase(Locale.ROOT);
 
                     if (command.contains("hey saha")
                             || command.contains("hey sah")
-                            || command.contains("हे साहा")) {
+                            || command.contains("हे साहा")
+                            || command.contains("हे सहा")) {
 
-                        Intent intent =
-                                new Intent(
-                                        SahaVoiceService.this,
-                                        MainActivity.class
-                                );
-
-                        intent.addFlags(
-                                Intent.FLAG_ACTIVITY_NEW_TASK
-                        );
-
-                        startActivity(intent);
+                        speak("जी, मैं सुन रहा हूँ।");
                     }
                 }
 
@@ -107,7 +110,7 @@ public class SahaVoiceService extends Service {
 
         speechIntent.putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE,
-                "en-IN"
+                "hi-IN"
         );
 
         speechIntent.putExtra(
@@ -118,6 +121,18 @@ public class SahaVoiceService extends Service {
         recognizer.startListening(speechIntent);
     }
 
+    private void speak(String message) {
+
+        if (tts != null) {
+            tts.speak(
+                    message,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "SAHA_RESPONSE"
+            );
+        }
+    }
+
     private void restartListening() {
 
         if (recognizer != null) {
@@ -125,9 +140,9 @@ public class SahaVoiceService extends Service {
             recognizer = null;
         }
 
-        new android.os.Handler().postDelayed(
+        new Handler().postDelayed(
                 this::startListening,
-                1000
+                1200
         );
     }
 
@@ -152,6 +167,12 @@ public class SahaVoiceService extends Service {
         if (recognizer != null) {
             recognizer.destroy();
             recognizer = null;
+        }
+
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+            tts = null;
         }
 
         super.onDestroy();

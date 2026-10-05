@@ -20,6 +20,12 @@ public class SahaVoiceService extends Service {
 
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
+
+    private boolean ttsReady = false;
+    private boolean responding = false;
+
+    private final Handler handler = new Handler();
+
     private static final String CHANNEL_ID = "saha_voice";
 
     @Override
@@ -38,28 +44,45 @@ public class SahaVoiceService extends Service {
         startForeground(1, notification);
 
         tts = new TextToSpeech(this, status -> {
+
             if (status == TextToSpeech.SUCCESS) {
-                tts.setLanguage(new Locale("hi", "IN"));
+
+                int result =
+                        tts.setLanguage(new Locale("hi", "IN"));
+
+                ttsReady =
+                        result != TextToSpeech.LANG_MISSING_DATA
+                        && result != TextToSpeech.LANG_NOT_SUPPORTED;
             }
         });
 
-        startListening();
+        // TTS ko ready hone ka thoda time
+        handler.postDelayed(
+                this::startListening,
+                1500
+        );
     }
 
     private void startListening() {
 
+        if (responding) {
+            return;
+        }
+
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            speak("Voice recognition available nahi hai.");
             return;
         }
 
         if (recognizer != null) {
             recognizer.destroy();
+            recognizer = null;
         }
 
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        recognizer =
+                SpeechRecognizer.createSpeechRecognizer(this);
 
-        recognizer.setRecognitionListener(new RecognitionListener() {
+        recognizer.setRecognitionListener(
+                new RecognitionListener() {
 
             @Override
             public void onResults(Bundle results) {
@@ -71,15 +94,13 @@ public class SahaVoiceService extends Service {
 
                 if (matches != null && !matches.isEmpty()) {
 
-                    String command = matches.get(0)
-                            .toLowerCase(Locale.ROOT);
+                    String command =
+                            matches.get(0)
+                                    .toLowerCase(Locale.ROOT)
+                                    .trim();
 
-                    if (command.contains("hey saha")
-                            || command.contains("hey sah")
-                            || command.contains("हे साहा")
-                            || command.contains("हे सहा")) {
-
-                        speak("जी, मैं सुन रहा हूँ।");
+                    if (containsWakeWord(command)) {
+                        respond();
                     }
                 }
 
@@ -91,17 +112,41 @@ public class SahaVoiceService extends Service {
                 restartListening();
             }
 
-            @Override public void onReadyForSpeech(Bundle params) {}
-            @Override public void onBeginningOfSpeech() {}
-            @Override public void onRmsChanged(float rmsdB) {}
-            @Override public void onBufferReceived(byte[] buffer) {}
-            @Override public void onEndOfSpeech() {}
-            @Override public void onPartialResults(Bundle partialResults) {}
-            @Override public void onEvent(int eventType, Bundle params) {}
+            @Override
+            public void onReadyForSpeech(Bundle params) {
+            }
+
+            @Override
+            public void onBeginningOfSpeech() {
+            }
+
+            @Override
+            public void onRmsChanged(float rmsdB) {
+            }
+
+            @Override
+            public void onBufferReceived(byte[] buffer) {
+            }
+
+            @Override
+            public void onEndOfSpeech() {
+            }
+
+            @Override
+            public void onPartialResults(Bundle partialResults) {
+            }
+
+            @Override
+            public void onEvent(
+                    int eventType,
+                    Bundle params) {
+            }
         });
 
         Intent speechIntent =
-                new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                new Intent(
+                        RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                );
 
         speechIntent.putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -114,36 +159,73 @@ public class SahaVoiceService extends Service {
         );
 
         speechIntent.putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                "hi-IN"
+        );
+
+        speechIntent.putExtra(
                 RecognizerIntent.EXTRA_PARTIAL_RESULTS,
                 false
+        );
+
+        speechIntent.putExtra(
+                RecognizerIntent.EXTRA_MAX_RESULTS,
+                3
         );
 
         recognizer.startListening(speechIntent);
     }
 
-    private void speak(String message) {
+    private boolean containsWakeWord(String command) {
 
-        if (tts != null) {
-            tts.speak(
-                    message,
-                    TextToSpeech.QUEUE_FLUSH,
-                    null,
-                    "SAHA_RESPONSE"
-            );
+        return command.contains("hey saha")
+                || command.contains("hey sah")
+                || command.contains("he saha")
+                || command.contains("saha")
+                || command.contains("साहा")
+                || command.contains("सहा")
+                || command.contains("साह");
+    }
+
+    private void respond() {
+
+        if (!ttsReady || tts == null) {
+            return;
         }
+
+        responding = true;
+
+        tts.speak(
+                "जी, मैं सुन रहा हूँ।",
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "SAHA_RESPONSE"
+        );
+
+        // Response ke baad listening dobara start
+        handler.postDelayed(() -> {
+
+            responding = false;
+            restartListening();
+
+        }, 2500);
     }
 
     private void restartListening() {
 
         if (recognizer != null) {
+
             recognizer.destroy();
             recognizer = null;
         }
 
-        new Handler().postDelayed(
-                this::startListening,
-                1200
-        );
+        if (!responding) {
+
+            handler.postDelayed(
+                    this::startListening,
+                    1000
+            );
+        }
     }
 
     private void createNotificationChannel() {
@@ -156,7 +238,9 @@ public class SahaVoiceService extends Service {
                 );
 
         NotificationManager manager =
-                getSystemService(NotificationManager.class);
+                getSystemService(
+                        NotificationManager.class
+                );
 
         manager.createNotificationChannel(channel);
     }
@@ -164,12 +248,16 @@ public class SahaVoiceService extends Service {
     @Override
     public void onDestroy() {
 
+        handler.removeCallbacksAndMessages(null);
+
         if (recognizer != null) {
+
             recognizer.destroy();
             recognizer = null;
         }
 
         if (tts != null) {
+
             tts.stop();
             tts.shutdown();
             tts = null;

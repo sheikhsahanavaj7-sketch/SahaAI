@@ -1,10 +1,11 @@
-package com.saha.ai;
+kpackage com.saha.ai;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -56,18 +57,12 @@ public class SahaVoiceService extends Service {
             }
         });
 
-        // TTS ko ready hone ka thoda time
-        handler.postDelayed(
-                this::startListening,
-                1500
-        );
+        handler.postDelayed(this::startListening, 1500);
     }
 
     private void startListening() {
 
-        if (responding) {
-            return;
-        }
+        if (responding) return;
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             return;
@@ -100,7 +95,14 @@ public class SahaVoiceService extends Service {
                                     .trim();
 
                     if (containsWakeWord(command)) {
-                        respond();
+
+                        if (containsGoogleCommand(command)) {
+                            openGoogle();
+                        } else {
+                            respond(
+                                    "जी, मैं सुन रहा हूँ।"
+                            );
+                        }
                     }
                 }
 
@@ -113,34 +115,27 @@ public class SahaVoiceService extends Service {
             }
 
             @Override
-            public void onReadyForSpeech(Bundle params) {
-            }
+            public void onReadyForSpeech(Bundle params) {}
 
             @Override
-            public void onBeginningOfSpeech() {
-            }
+            public void onBeginningOfSpeech() {}
 
             @Override
-            public void onRmsChanged(float rmsdB) {
-            }
+            public void onRmsChanged(float rmsdB) {}
 
             @Override
-            public void onBufferReceived(byte[] buffer) {
-            }
+            public void onBufferReceived(byte[] buffer) {}
 
             @Override
-            public void onEndOfSpeech() {
-            }
+            public void onEndOfSpeech() {}
 
             @Override
-            public void onPartialResults(Bundle partialResults) {
-            }
+            public void onPartialResults(Bundle partialResults) {}
 
             @Override
             public void onEvent(
                     int eventType,
-                    Bundle params) {
-            }
+                    Bundle params) {}
         });
 
         Intent speechIntent =
@@ -187,22 +182,65 @@ public class SahaVoiceService extends Service {
                 || command.contains("साह");
     }
 
-    private void respond() {
+    private boolean containsGoogleCommand(String command) {
+
+        return command.contains("google")
+                || command.contains("गूगल");
+    }
+
+    private void openGoogle() {
+
+        responding = true;
+
+        if (ttsReady && tts != null) {
+
+            tts.speak(
+                    "जी, Google खोल रहा हूँ।",
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "GOOGLE_RESPONSE"
+            );
+        }
+
+        handler.postDelayed(() -> {
+
+            try {
+
+                Intent intent = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://www.google.com")
+                );
+
+                intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                );
+
+                startActivity(intent);
+
+            } catch (Exception e) {
+                responding = false;
+                restartListening();
+            }
+
+        }, 1200);
+    }
+
+    private void respond(String message) {
 
         if (!ttsReady || tts == null) {
+            responding = false;
             return;
         }
 
         responding = true;
 
         tts.speak(
-                "जी, मैं सुन रहा हूँ।",
+                message,
                 TextToSpeech.QUEUE_FLUSH,
                 null,
                 "SAHA_RESPONSE"
         );
 
-        // Response ke baad listening dobara start
         handler.postDelayed(() -> {
 
             responding = false;
@@ -251,13 +289,11 @@ public class SahaVoiceService extends Service {
         handler.removeCallbacksAndMessages(null);
 
         if (recognizer != null) {
-
             recognizer.destroy();
             recognizer = null;
         }
 
         if (tts != null) {
-
             tts.stop();
             tts.shutdown();
             tts = null;

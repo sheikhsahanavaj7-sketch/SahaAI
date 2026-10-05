@@ -24,6 +24,7 @@ public class SahaVoiceService extends Service {
 
     private boolean ttsReady = false;
     private boolean responding = false;
+    private boolean listening = false;
 
     private final Handler handler = new Handler();
 
@@ -57,12 +58,14 @@ public class SahaVoiceService extends Service {
             }
         });
 
-        handler.postDelayed(this::startListening, 1500);
+        handler.postDelayed(this::startListening, 1800);
     }
 
     private void startListening() {
 
-        if (responding) return;
+        if (responding || listening) {
+            return;
+        }
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             return;
@@ -80,28 +83,43 @@ public class SahaVoiceService extends Service {
                 new RecognitionListener() {
 
             @Override
+            public void onReadyForSpeech(Bundle params) {
+                listening = true;
+            }
+
+            @Override
+            public void onBeginningOfSpeech() {
+                listening = true;
+            }
+
+            @Override
             public void onResults(Bundle results) {
+
+                listening = false;
 
                 ArrayList<String> matches =
                         results.getStringArrayList(
                                 SpeechRecognizer.RESULTS_RECOGNITION
                         );
 
-                if (matches != null && !matches.isEmpty()) {
+                if (matches != null) {
 
-                    String command =
-                            matches.get(0)
-                                    .toLowerCase(Locale.ROOT)
-                                    .trim();
+                    for (String result : matches) {
 
-                    if (containsWakeWord(command)) {
+                        String command =
+                                result.toLowerCase(Locale.ROOT).trim();
 
-                        if (containsGoogleCommand(command)) {
-                            openGoogle();
-                        } else {
-                            respond(
-                                    "जी, मैं सुन रहा हूँ।"
-                            );
+                        if (containsWakeWord(command)) {
+
+                            if (containsGoogleCommand(command)) {
+                                openGoogle();
+                            } else {
+                                respond(
+                                        "जी, मैं सुन रहा हूँ।"
+                                );
+                            }
+
+                            return;
                         }
                     }
                 }
@@ -110,32 +128,63 @@ public class SahaVoiceService extends Service {
             }
 
             @Override
+            public void onPartialResults(Bundle partialResults) {
+
+                ArrayList<String> partial =
+                        partialResults.getStringArrayList(
+                                SpeechRecognizer.RESULTS_RECOGNITION
+                        );
+
+                if (partial != null) {
+
+                    for (String result : partial) {
+
+                        String command =
+                                result.toLowerCase(Locale.ROOT);
+
+                        if (containsWakeWord(command)) {
+
+                            stopRecognition();
+
+                            if (containsGoogleCommand(command)) {
+                                openGoogle();
+                            } else {
+                                respond(
+                                        "जी, मैं सुन रहा हूँ।"
+                                );
+                            }
+
+                            return;
+                        }
+                    }
+                }
+            }
+
+            @Override
             public void onError(int error) {
+
+                listening = false;
                 restartListening();
             }
 
             @Override
-            public void onReadyForSpeech(Bundle params) {}
+            public void onRmsChanged(float rmsdB) {
+            }
 
             @Override
-            public void onBeginningOfSpeech() {}
+            public void onBufferReceived(byte[] buffer) {
+            }
 
             @Override
-            public void onRmsChanged(float rmsdB) {}
-
-            @Override
-            public void onBufferReceived(byte[] buffer) {}
-
-            @Override
-            public void onEndOfSpeech() {}
-
-            @Override
-            public void onPartialResults(Bundle partialResults) {}
+            public void onEndOfSpeech() {
+                listening = false;
+            }
 
             @Override
             public void onEvent(
                     int eventType,
-                    Bundle params) {}
+                    Bundle params) {
+            }
         });
 
         Intent speechIntent =
@@ -160,12 +209,27 @@ public class SahaVoiceService extends Service {
 
         speechIntent.putExtra(
                 RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                false
+                true
         );
 
         speechIntent.putExtra(
                 RecognizerIntent.EXTRA_MAX_RESULTS,
-                3
+                5
+        );
+
+        speechIntent.putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                1500
+        );
+
+        speechIntent.putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                2500
+        );
+
+        speechIntent.putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                2000
         );
 
         recognizer.startListening(speechIntent);
@@ -188,6 +252,28 @@ public class SahaVoiceService extends Service {
                 || command.contains("गूगल");
     }
 
+    private void respond(String message) {
+
+        responding = true;
+
+        if (ttsReady && tts != null) {
+
+            tts.speak(
+                    message,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "SAHA_RESPONSE"
+            );
+        }
+
+        handler.postDelayed(() -> {
+
+            responding = false;
+            restartListening();
+
+        }, 2500);
+    }
+
     private void openGoogle() {
 
         responding = true;
@@ -206,10 +292,11 @@ public class SahaVoiceService extends Service {
 
             try {
 
-                Intent intent = new Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse("https://www.google.com")
-                );
+                Intent intent =
+                        new Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://www.google.com")
+                        );
 
                 intent.addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK
@@ -222,40 +309,35 @@ public class SahaVoiceService extends Service {
                 restartListening();
             }
 
-        }, 1200);
+        }, 1300);
     }
 
-    private void respond(String message) {
+    private void stopRecognition() {
 
-        if (!ttsReady || tts == null) {
-            responding = false;
-            return;
+        listening = false;
+
+        if (recognizer != null) {
+
+            try {
+                recognizer.stopListening();
+            } catch (Exception ignored) {
+            }
         }
-
-        responding = true;
-
-        tts.speak(
-                message,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "SAHA_RESPONSE"
-        );
-
-        handler.postDelayed(() -> {
-
-            responding = false;
-            restartListening();
-
-        }, 2500);
     }
 
     private void restartListening() {
 
         if (recognizer != null) {
 
-            recognizer.destroy();
+            try {
+                recognizer.destroy();
+            } catch (Exception ignored) {
+            }
+
             recognizer = null;
         }
+
+        listening = false;
 
         if (!responding) {
 
@@ -289,11 +371,13 @@ public class SahaVoiceService extends Service {
         handler.removeCallbacksAndMessages(null);
 
         if (recognizer != null) {
+
             recognizer.destroy();
             recognizer = null;
         }
 
         if (tts != null) {
+
             tts.stop();
             tts.shutdown();
             tts = null;
@@ -307,3 +391,11 @@ public class SahaVoiceService extends Service {
         return null;
     }
 }
+
+
+
+
+
+
+
+
